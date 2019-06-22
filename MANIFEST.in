@@ -1,0 +1,8 @@
+include .travis.yml
+include LICENSE
+include MANIFEST.in
+include README.md
+include mopidy_lagukan/ext.conf
+include tox.ini
+
+recursive-include tests *.py
