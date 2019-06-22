@@ -19,7 +19,7 @@ setup(
     author='Jacob O\'Bryant',
     author_email='foo@jacobobryant.com',
     description='Mopidy extension for Lagukan',
-    long_description=open('README.rst').read(),
+    long_description=open('README.md').read(),
     packages=find_packages(exclude=['tests', 'tests.*']),
     zip_safe=False,
     include_package_data=True,
