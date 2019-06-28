@@ -11,6 +11,9 @@ import time
 import uuid
 import requests
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 # todo send collection in (rate-limited) batches
 # todo handle invalid client id
@@ -23,7 +26,7 @@ collection_uris = {'local:directory'}
 
 def get_session(config):
     proxy = httpclient.format_proxy(config['proxy'])
-    user_agent = httpclient.format_user_agent('Mopidy-Lagukan/0.1.0')
+    user_agent = httpclient.format_user_agent('Mopidy-Lagukan/0.1.1')
 
     session = requests.Session()
     session.proxies.update({'http': proxy, 'https': proxy})
@@ -112,7 +115,7 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
         self.core.tracklist.add(tracks=tracks, at_position=pos)
 
     def hit(self, url, payload=None):
-        print("hitting", url)
+        logger.info("hitting Lagukan endpoint: " + url)
         self.update_token()
 
         url = backend_url + url
@@ -122,6 +125,7 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
                    'Accept': 'application/json'}
 
         response = self.session.post(url, data=payload, headers=headers)
+        response.raise_for_status()
         #import code; code.interact(local=locals())
         return json.loads(response.text)
 

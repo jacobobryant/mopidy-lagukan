@@ -1,6 +1,6 @@
 # Mopidy-Lagukan
 
-Mopidy extension for Lagukan
+Mopidy extension for Lagukan. See https://lagukan.com
 
 ## Installation
 
