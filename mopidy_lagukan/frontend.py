@@ -26,7 +26,7 @@ collection_uris = {'local:directory'}
 
 def get_session(config):
     proxy = httpclient.format_proxy(config['proxy'])
-    user_agent = httpclient.format_user_agent('Mopidy-Lagukan/0.1.2')
+    user_agent = httpclient.format_user_agent('Mopidy-Lagukan/0.1.3')
 
     session = requests.Session()
     session.proxies.update({'http': proxy, 'https': proxy})
@@ -71,7 +71,7 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
             with open(state_file, 'r') as f:
                 state = pickle.load(f)
         except:
-            state = select_keys(self.hit('/register-client'), ['client-id'])
+            state = {'client-id': uuid.UUID(self.hit('/register-client')['client-id'])}
 
         if 'last-refresh' not in state or time.time() - state['last-refresh'] > 60 * 60 * 24 * 7:
             state['last-refresh'] = time.time()
@@ -125,8 +125,10 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
                    'Accept': 'application/json'}
 
         response = self.session.post(url, data=payload, headers=headers)
-        response.raise_for_status()
+        if not response.ok:
+            logger.error(response.text)
         #import code; code.interact(local=locals())
+        response.raise_for_status()
         return json.loads(response.text)
 
     def update_token(self):
