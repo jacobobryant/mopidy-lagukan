@@ -19,14 +19,14 @@ logger = logging.getLogger(__name__)
 # todo handle invalid client id
 
 auth_url = "https://securetoken.googleapis.com/v1/token?key=AIzaSyCMIaf1mHHyJziOI0xRw0Qgw6Bh5f5UUS8"
-backend_url = "https://79gcws2i5i.execute-api.us-east-1.amazonaws.com/dev/"
+backend_url = "https://79gcws2i5i.execute-api.us-east-1.amazonaws.com/dev"
 #backend_url = "http://localhost:8080"
 streaming_sources = {'soundcloud', 'spotify', 'gmusic', 'youtube'}
 collection_uris = {'local:directory'}
 
 def get_session(config):
     proxy = httpclient.format_proxy(config['proxy'])
-    user_agent = httpclient.format_user_agent('Mopidy-Lagukan/0.1.1')
+    user_agent = httpclient.format_user_agent('Mopidy-Lagukan/0.1.2')
 
     session = requests.Session()
     session.proxies.update({'http': proxy, 'https': proxy})
