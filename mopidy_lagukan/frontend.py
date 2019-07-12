@@ -22,11 +22,16 @@ auth_url = "https://securetoken.googleapis.com/v1/token?key=AIzaSyCMIaf1mHHyJziO
 backend_url = "https://79gcws2i5i.execute-api.us-east-1.amazonaws.com/dev"
 #backend_url = "http://localhost:8080"
 streaming_sources = {'soundcloud', 'spotify', 'gmusic', 'youtube'}
+priority = {'local': 0,
+            'gmusic': 1,
+            'spotify': 2,
+            'youtube': 3,
+            'soundcloud': 4}
 collection_uris = {'local:directory'}
 
 def get_session(config):
     proxy = httpclient.format_proxy(config['proxy'])
-    user_agent = httpclient.format_user_agent('Mopidy-Lagukan/0.1.3')
+    user_agent = httpclient.format_user_agent('Mopidy-Lagukan/0.1.4')
 
     session = requests.Session()
     session.proxies.update({'http': proxy, 'https': proxy})
@@ -108,6 +113,7 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
         if events is None:
             events = []
         metas = self.hit('/recommend', {'client-id': self.client_id, 'events': events})['recommendations']
+        #import code; code.interact(local=locals())
         tracks = [self.get_track(m) for m in metas]
         tracks = [x for x in tracks if x is not None]
         current_pos = self.core.tracklist.index().get()
@@ -154,8 +160,9 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
                     if k != 'track/artists':
                         val = [val]
                     query[qk] = val
-
-            return self.core.library.search(query).get()[0].tracks[0]
+            result = self.core.library.search(query).get()
+            ret = sorted([t for r in result for t in r.tracks], key=lambda t: priority[t.uri.split(':')[0]])
+            return ret[0]
         except:
             return None
 
