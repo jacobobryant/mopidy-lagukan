@@ -31,7 +31,7 @@ collection_uris = {'local:directory'}
 
 def get_session(config):
     proxy = httpclient.format_proxy(config['proxy'])
-    user_agent = httpclient.format_user_agent('Mopidy-Lagukan/0.1.4')
+    user_agent = httpclient.format_user_agent('Mopidy-Lagukan/0.1.5')
 
     session = requests.Session()
     session.proxies.update({'http': proxy, 'https': proxy})
@@ -117,7 +117,27 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
         tracks = [self.get_track(m) for m in metas]
         tracks = [x for x in tracks if x is not None]
         current_pos = self.core.tracklist.index().get()
+        if current_pos is not None:
+            index = self.core.tracklist.index().get()
+            current_track = self.core.tracklist.get_tracks().get()[index]
+            current_song = format_track(current_track)
+            def is_current_song(t):
+                other_t = format_track(t)
+                try:
+                    return t['track/title'] == other_t['track/title'] and \
+                            t['track/artists'][0] == other_t['track/artists'][0]
+                except:
+                    return False
+            tracks = [t for t in tracks if not is_current_song(t)]
+
+            current_tlid = self.core.tracklist.get_tl_tracks().get()[index].tlid
+            future_tlids = filter(lambda x: x > current_tlid,
+                                map(lambda x: x.tlid,
+                                    self.core.tracklist.get_tl_tracks().get()))
+            self.core.tracklist.remove({'tlid': future_tlids})
+
         pos = 0 if current_pos == None else current_pos + 1
+        #import code; code.interact(local=locals())
         self.core.tracklist.add(tracks=tracks, at_position=pos)
 
     def hit(self, url, payload=None):
