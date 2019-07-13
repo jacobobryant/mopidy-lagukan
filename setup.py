@@ -28,7 +28,8 @@ setup(
         'Mopidy >= 1.0',
         'Pykka >= 1.1',
         'appdirs',
-        'edn_format'
+        'edn_format',
+        'frozendict'
     ],
     entry_points={
         'mopidy.ext': [

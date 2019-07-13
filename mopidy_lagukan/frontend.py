@@ -28,10 +28,11 @@ priority = {'local': 0,
             'youtube': 3,
             'soundcloud': 4}
 collection_uris = {'local:directory'}
+state_file = os.path.join(appdirs.user_data_dir(), 'mopidy-lagukan', 'state')
 
 def get_session(config):
     proxy = httpclient.format_proxy(config['proxy'])
-    user_agent = httpclient.format_user_agent('Mopidy-Lagukan/0.1.5')
+    user_agent = httpclient.format_user_agent('Mopidy-Lagukan/0.1.6')
 
     session = requests.Session()
     session.proxies.update({'http': proxy, 'https': proxy})
@@ -62,6 +63,18 @@ def format_track(track):
             ret['track/artists'] = [artist.name for artist in track.album.artists]
     return ret
 
+def read_state():
+    with open(state_file, 'r') as f:
+        return pickle.load(f)
+
+def write_state(s):
+    try:
+        os.makedirs(os.path.dirname(state_file))
+    except:
+        pass
+    with open(state_file, 'w') as f:
+        pickle.dump(select_keys(s, ['client-id', 'last-refresh', 'blacklist']), f, pickle.HIGHEST_PROTOCOL)
+
 class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
     def __init__(self, config, core):
         super(LagukanFrontend, self).__init__()
@@ -71,10 +84,10 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
         self.expire_time = None
         self.update_token()
 
-        state_file = os.path.join(appdirs.user_data_dir(), 'mopidy-lagukan', 'state')
+        # TODO check blacklist
+
         try:
-            with open(state_file, 'r') as f:
-                state = pickle.load(f)
+            state = read_state()
         except:
             state = {'client-id': uuid.UUID(self.hit('/register-client')['client-id'])}
 
@@ -96,17 +109,9 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
             state['sources'] = sources
 
             self.hit('/init', select_keys(state, ['client-id', 'collection', 'sources']))
-
-            try:
-                os.makedirs(os.path.dirname(state_file))
-            except:
-                pass
-
-            with open(state_file, 'w') as f:
-                pickle.dump(select_keys(state, ['client-id', 'last-refresh']), f, pickle.HIGHEST_PROTOCOL)
+            write_state(state)
 
         self.client_id = state['client-id']
-        # TODO modify tracklist
         self.recommend()
 
     def recommend(self, events=None):
@@ -114,31 +119,26 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
             events = []
         metas = self.hit('/recommend', {'client-id': self.client_id, 'events': events})['recommendations']
         #import code; code.interact(local=locals())
-        tracks = [self.get_track(m) for m in metas]
-        tracks = [x for x in tracks if x is not None]
+        tracks, not_found = self.get_tracks(metas)
         current_pos = self.core.tracklist.index().get()
         if current_pos is not None:
-            index = self.core.tracklist.index().get()
-            current_track = self.core.tracklist.get_tracks().get()[index]
-            current_song = format_track(current_track)
-            def is_current_song(t):
-                other_t = format_track(t)
-                try:
-                    return t['track/title'] == other_t['track/title'] and \
-                            t['track/artists'][0] == other_t['track/artists'][0]
-                except:
-                    return False
-            tracks = [t for t in tracks if not is_current_song(t)]
+            current_track = self.core.tracklist.get_tracks().get()[current_pos]
+            tracks = [t for t in tracks if t != current_track]
 
-            current_tlid = self.core.tracklist.get_tl_tracks().get()[index].tlid
-            future_tlids = filter(lambda x: x > current_tlid,
-                                map(lambda x: x.tlid,
-                                    self.core.tracklist.get_tl_tracks().get()))
+            tl_tracks = self.core.tracklist.get_tl_tracks().get()
+            current_tlid = tl_tracks[current_pos].tlid
+            future_tlids = [t.tlid for t in tl_tracks if t.tlid > current_tlid]
             self.core.tracklist.remove({'tlid': future_tlids})
 
         pos = 0 if current_pos == None else current_pos + 1
-        #import code; code.interact(local=locals())
         self.core.tracklist.add(tracks=tracks, at_position=pos)
+        if len(not_found) > 0:
+            state = read_state()
+            if 'blacklist' not in state:
+                state['blacklist'] = []
+            state['blacklist'].extend(not_found)
+            write_state(state)
+            self.hit('/blacklist', {'client-id': self.client_id, 'blacklist': not_found})
 
     def hit(self, url, payload=None):
         logger.info("hitting Lagukan endpoint: " + url)
@@ -171,19 +171,23 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
                    'event.track-end/position': time_position}]
         self.recommend(events)
 
-    def get_track(self, meta):
-        try:
-            query = {}
-            for k, qk in zip(['track/artists', 'track/title', 'track/album'], ['artist', 'track_name', 'album']):
-                if k in meta:
-                    val = meta[k]
-                    if k != 'track/artists':
-                        val = [val]
-                    query[qk] = val
-            result = self.core.library.search(query).get()
-            ret = sorted([t for r in result for t in r.tracks], key=lambda t: priority[t.uri.split(':')[0]])
-            return ret[0]
-        except:
-            return None
+    def get_tracks(self, metas):
+        tracks = []
+        not_found = []
+        for meta in metas:
+            try:
+                query = {}
+                for k, qk in zip(['track/artists', 'track/title', 'track/album'], ['artist', 'track_name', 'album']):
+                    if k in meta:
+                        val = meta[k]
+                        if k != 'track/artists':
+                            val = [val]
+                        query[qk] = val
+                result = self.core.library.search(query).get()
+                ret = sorted([t for r in result for t in r.tracks], key=lambda t: priority[t.uri.split(':')[0]])
+                tracks.append(ret[0])
+            except:
+                not_found.append(meta)
+        return tracks, not_found
 
         #import code; code.interact(local=locals())
