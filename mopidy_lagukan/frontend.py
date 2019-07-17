@@ -12,6 +12,7 @@ import uuid
 import requests
 import json
 import logging
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +28,9 @@ priority = {'local': 0,
             'spotify': 2,
             'youtube': 3,
             'soundcloud': 4}
-collection_uris = {'local:directory'}
+source_uris = {'local:directory'}
 state_file = os.path.join(appdirs.user_data_dir(), 'mopidy-lagukan', 'state')
+unrecognized_file = os.path.join(appdirs.user_data_dir(), 'mopidy-lagukan', 'unrecognized')
 
 def get_session(config):
     proxy = httpclient.format_proxy(config['proxy'])
@@ -56,11 +58,15 @@ def collect(library, uri):
     return ret
 
 def format_track(track):
-    ret = {'track/title': track.name}
+    ret = {}
+    if track.name is not None:
+        ret['track/title'] = track.name
     if track.album != None:
         ret['track/album'] = track.album.name
-        if track.album.artists != None:
-            ret['track/artists'] = [artist.name for artist in track.album.artists]
+    if len(track.artists) != 0:
+        ret['track/artists'] = [artist.name for artist in track.artists]
+    elif track.album != None and len(track.album.artists) != 0:
+        ret['track/artists'] = [artist.name for artist in track.album.artists]
     return ret
 
 def read_state():
@@ -73,7 +79,7 @@ def write_state(s):
     except:
         pass
     with open(state_file, 'w') as f:
-        pickle.dump(select_keys(s, ['client-id', 'last-refresh', 'blacklist']), f, pickle.HIGHEST_PROTOCOL)
+        pickle.dump(select_keys(s, ['client-id', 'blacklist']), f, pickle.HIGHEST_PROTOCOL)
 
 class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
     def __init__(self, config, core):
@@ -90,34 +96,51 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
             state = read_state()
         except:
             state = {'client-id': uuid.UUID(self.hit('/register-client')['client-id'])}
-
-        if 'last-refresh' not in state or time.time() - state['last-refresh'] > 60 * 60 * 24 * 7:
-            state['last-refresh'] = time.time()
-
-            collection = []
-            for collection_uri in collection_uris:
-                collection.extend(collect(core.library, collection_uri))
-            collection = [format_track(track)
-                          for result in core.library.lookup(uris=collection).get().values()
-                          for track in result]
-
-            sources = [k for k in config.keys()
-                         if k in streaming_sources and config[k]['enabled']]
-
-            # todo spotify uid and lastfm uid
-            state['collection'] = collection
-            state['sources'] = sources
-
-            self.hit('/init', select_keys(state, ['client-id', 'collection', 'sources']))
             write_state(state)
-
         self.client_id = state['client-id']
+
+        track_uris = []
+        for uri in source_uris:
+            track_uris.extend(collect(core.library, uri))
+
+        tracks = [track
+                  for result in core.library.lookup(uris=track_uris).get().values()
+                  for track in result]
+        unrecognized = []
+        collection = []
+        for t in tracks:
+            ft = format_track(t)
+            if 'track/artists' in ft:
+                collection.append(ft)
+            else:
+                unrecognized.append(t)
+
+        if len(unrecognized) > 0:
+            with open(unrecognized_file, 'w') as f:
+                for t in unrecognized:
+                    print(t.uri.replace("%20", " "), format_track(t), file=f)
+            logger.info("There were " + str(len(unrecognized)) + " tracks without either "
+                + "title or artist metadata. These tracks will not be played by Lagukan. "
+                + "See " + unrecognized_file + " to see the tracks.")
+
+        #import code; code.interact(local=locals())
+        #print(len(collection))
+
+        sources = [k for k in config.keys()
+                     if k in streaming_sources and config[k]['enabled']]
+
+        # todo spotify uid and lastfm uid
+        payload = {'client-id': self.client_id,
+                   'collection': collection,
+                   'sources': sources}
+        self.hit('/init', payload)
+
         self.recommend()
 
-    def recommend(self, events=None):
-        if events is None:
-            events = []
-        metas = self.hit('/recommend', {'client-id': self.client_id, 'events': events})['recommendations']
+    def recommend(self, event=None):
+        payload = {'client-id': self.client_id, 'event': event}
+        metas = self.hit('/recommend', payload)['recommendations']
+
         #import code; code.interact(local=locals())
         tracks, not_found = self.get_tracks(metas)
         current_pos = self.core.tracklist.index().get()
@@ -166,10 +189,13 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
             self.expire_time = time.time() + int(response['expires_in'])
 
     def track_playback_ended(self, tl_track, time_position):
-        events = [{'event.track-end/track': format_track(tl_track.track),
-                   'event.track-end/length': tl_track.track.length,
-                   'event.track-end/position': time_position}]
-        self.recommend(events)
+        try:
+            event = {'event.track-end/track': format_track(tl_track.track),
+                     'event.track-end/length': tl_track.track.length,
+                     'event.track-end/position': time_position}
+        except:
+            event = None
+        self.recommend(event)
 
     def get_tracks(self, metas):
         tracks = []
