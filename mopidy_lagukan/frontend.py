@@ -45,9 +45,6 @@ def get_session(config):
 def select_keys(d, keys):
     return {k: d[k] for k in keys if k in d}
 
-def stringify_keys(d):
-    return {k.name: d[k] for k in d}
-
 def collect(library, uri):
     ret = []
     for ref in library.browse(uri).get():
@@ -88,7 +85,6 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
         self.config = config
         self.session = get_session(config)
         self.expire_time = None
-        self.update_token()
 
         # TODO check blacklist
 
@@ -123,8 +119,6 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
                 + "title or artist metadata. These tracks will not be played by Lagukan. "
                 + "See " + unrecognized_file + " to see the tracks.")
 
-        #import code; code.interact(local=locals())
-        #print(len(collection))
 
         sources = [k for k in config.keys()
                      if k in streaming_sources and config[k]['enabled']]
@@ -134,7 +128,6 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
                    'collection': collection,
                    'sources': sources}
         self.hit('/init', payload)
-
         self.recommend()
 
     def recommend(self, event=None):
@@ -203,14 +196,16 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
         for meta in metas:
             try:
                 query = {}
-                for k, qk in zip(['track/artists', 'track/title', 'track/album'], ['artist', 'track_name', 'album']):
+                for k, qk in zip(['track/artists', 'track/title', 'track/album'],
+                                 ['artist', 'track_name', 'album']):
                     if k in meta:
                         val = meta[k]
                         if k != 'track/artists':
                             val = [val]
                         query[qk] = val
                 result = self.core.library.search(query).get()
-                ret = sorted([t for r in result for t in r.tracks], key=lambda t: priority[t.uri.split(':')[0]])
+                ret = sorted([t for r in result for t in r.tracks],
+                             key=lambda t: priority[t.uri.split(':')[0]])
                 tracks.append(ret[0])
             except:
                 not_found.append(meta)
