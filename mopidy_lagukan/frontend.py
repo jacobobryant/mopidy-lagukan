@@ -23,11 +23,6 @@ auth_url = "https://securetoken.googleapis.com/v1/token?key=AIzaSyCMIaf1mHHyJziO
 backend_url = "https://79gcws2i5i.execute-api.us-east-1.amazonaws.com/dev"
 #backend_url = "http://localhost:8080"
 streaming_sources = {'soundcloud', 'spotify', 'gmusic', 'youtube'}
-priority = {'local': 0,
-            'gmusic': 1,
-            'spotify': 2,
-            'youtube': 3,
-            'soundcloud': 4}
 source_uris = {'local:directory'}
 state_file = os.path.join(appdirs.user_data_dir(), 'mopidy-lagukan', 'state')
 unrecognized_file = os.path.join(appdirs.user_data_dir(), 'mopidy-lagukan', 'unrecognized')
@@ -58,7 +53,7 @@ def format_track(track):
     ret = {}
     if track.name is not None:
         ret['track/title'] = track.name
-    if track.album != None:
+    if track.album != None and track.album.name != "SoundCloud":
         ret['track/album'] = track.album.name
     if len(track.artists) != 0:
         ret['track/artists'] = [artist.name for artist in track.artists]
@@ -77,6 +72,13 @@ def write_state(s):
         pass
     with open(state_file, 'w') as f:
         pickle.dump(select_keys(s, ['client-id', 'blacklist']), f, pickle.HIGHEST_PROTOCOL)
+
+def debug(local):
+    import code
+    params = globals().copy()
+    params.update(local)
+    code.interact(local=params)
+    sys.exit(0)
 
 class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
     def __init__(self, config, core):
@@ -119,9 +121,24 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
                 + "title or artist metadata. These tracks will not be played by Lagukan. "
                 + "See " + unrecognized_file + " to see the tracks.")
 
-
         sources = [k for k in config.keys()
                      if k in streaming_sources and config[k]['enabled']]
+
+        #metas = [{u'track/title': u'Everything Apart', u'track/artists': [u'Foxwarren']},
+        #         {u'track/title': u'Carla Cain', u'track/artists': [u'The Hollering Pines']},
+        #         {u'track/title': u'To Be', u'track/artists': [u'Foxwarren']},
+        #         {u'track/title': u'Oh Mama', u'track/artists': [u'The Hollering Pines']},
+        #         {u'track/title': u'Tell Me Youre Leaving', u'track/artists': [u'The Hollering Pines']},
+        #         {u'track/title': u'Dysfunctional (EP Version)', u'track/artists': [u'Brogan Kelby']},
+        #         {u'track/title': u'Antidote', u'track/artists': [u'Faith Marie']},
+        #         {u'track/title': u'Dream Hearts', u'track/artists': [u'Brogan Kelby']},
+        #         {u'track/title': u'Little Girl', u'track/artists': [u'Faith Marie']},
+        #         {u'track/title': u'"Drown" Bring Me The Horizon (Cover)', u'track/artists': [u'Faith Marie']}]
+        #x, y = self.get_tracks(metas)
+        ## todo improve the soundcloud mopidy search. but maybe later
+        ## update backend, take 3 after query filtering
+        #debug(locals())
+
 
         # todo spotify uid and lastfm uid
         payload = {'client-id': self.client_id,
@@ -194,21 +211,23 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
         tracks = []
         not_found = []
         for meta in metas:
-            try:
-                query = {}
-                for k, qk in zip(['track/artists', 'track/title', 'track/album'],
-                                 ['artist', 'track_name', 'album']):
-                    if k in meta:
-                        val = meta[k]
-                        if k != 'track/artists':
-                            val = [val]
-                        query[qk] = val
-                result = self.core.library.search(query).get()
-                ret = sorted([t for r in result for t in r.tracks],
-                             key=lambda t: priority[t.uri.split(':')[0]])
-                tracks.append(ret[0])
-            except:
+            query = {}
+            for k, qk in zip(['track/artists', 'track/title', 'track/album'],
+                             ['artist', 'track_name', 'album']):
+                if k in meta:
+                    val = meta[k]
+                    if k != 'track/artists':
+                        val = [val]
+                    query[qk] = val
+            for source in ['local', 'spotify', 'soundcloud']:
+                result = self.core.library.search(query, uris=[source + ':']).get()
+                result = [t for r in result
+                            for t in r.tracks
+                            if format_track(t) == meta]
+                if len(result) > 0:
+                    break
+            if len(result) > 0:
+                tracks.append(result[0])
+            else:
                 not_found.append(meta)
         return tracks, not_found
-
-        #import code; code.interact(local=locals())
