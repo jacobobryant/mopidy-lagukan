@@ -13,6 +13,7 @@ import requests
 import json
 import logging
 import sys
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -134,9 +135,8 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
         #         {u'track/title': u'Dream Hearts', u'track/artists': [u'Brogan Kelby']},
         #         {u'track/title': u'Little Girl', u'track/artists': [u'Faith Marie']},
         #         {u'track/title': u'"Drown" Bring Me The Horizon (Cover)', u'track/artists': [u'Faith Marie']}]
-        #x, y = self.get_tracks(metas)
-        ## todo improve the soundcloud mopidy search. but maybe later
-        ## update backend, take 3 after query filtering
+        #x, y = self.get_tracks([metas[0]])
+        # todo improve the soundcloud mopidy search. but maybe later
         #debug(locals())
 
 
@@ -174,6 +174,7 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
             self.hit('/blacklist', {'client-id': self.client_id, 'blacklist': not_found})
 
     def hit(self, url, payload=None):
+        start = time.time()
         logger.info("hitting Lagukan endpoint: " + url)
         self.update_token()
 
@@ -184,6 +185,8 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
                    'Accept': 'application/json'}
 
         response = self.session.post(url, data=payload, headers=headers)
+        end = time.time()
+        #logger.info("done (" + str(int(end - start)) + " seconds)")
         if not response.ok:
             logger.error(response.text)
         #import code; code.interact(local=locals())
@@ -220,7 +223,7 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
                         val = [val]
                     query[qk] = val
             for source in ['local', 'spotify', 'soundcloud']:
-                result = self.core.library.search(query, uris=[source + ':']).get()
+                result = self.core.library.search(query, uris=[source + ':'], exact=True).get()
                 result = [t for r in result
                             for t in r.tracks
                             if format_track(t) == meta]
