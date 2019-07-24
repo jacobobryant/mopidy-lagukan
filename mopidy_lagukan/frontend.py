@@ -125,22 +125,7 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
         sources = [k for k in config.keys()
                      if k in streaming_sources and config[k]['enabled']]
 
-        #metas = [{u'track/title': u'Everything Apart', u'track/artists': [u'Foxwarren']},
-        #         {u'track/title': u'Carla Cain', u'track/artists': [u'The Hollering Pines']},
-        #         {u'track/title': u'To Be', u'track/artists': [u'Foxwarren']},
-        #         {u'track/title': u'Oh Mama', u'track/artists': [u'The Hollering Pines']},
-        #         {u'track/title': u'Tell Me Youre Leaving', u'track/artists': [u'The Hollering Pines']},
-        #         {u'track/title': u'Dysfunctional (EP Version)', u'track/artists': [u'Brogan Kelby']},
-        #         {u'track/title': u'Antidote', u'track/artists': [u'Faith Marie']},
-        #         {u'track/title': u'Dream Hearts', u'track/artists': [u'Brogan Kelby']},
-        #         {u'track/title': u'Little Girl', u'track/artists': [u'Faith Marie']},
-        #         {u'track/title': u'"Drown" Bring Me The Horizon (Cover)', u'track/artists': [u'Faith Marie']}]
-        #x, y = self.get_tracks([metas[0]])
-        # todo improve the soundcloud mopidy search. but maybe later
         #debug(locals())
-
-
-        # todo spotify uid and lastfm uid
         payload = {'client-id': self.client_id,
                    'collection': collection,
                    'sources': sources}
@@ -151,20 +136,24 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
         payload = {'client-id': self.client_id, 'event': event}
         metas = self.hit('/recommend', payload)['recommendations']
 
-        #import code; code.interact(local=locals())
+        # Add the new tracks
         tracks, not_found = self.get_tracks(metas)
-        current_pos = self.core.tracklist.index().get()
-        if current_pos is not None:
-            current_track = self.core.tracklist.get_tracks().get()[current_pos]
-            tracks = [t for t in tracks if t != current_track]
+        pos = self.core.tracklist.index().get()
+        pos = 0 if pos is None else pos + 1
+        self.core.tracklist.add(tracks=tracks, at_position=pos).get()
 
-            tl_tracks = self.core.tracklist.get_tl_tracks().get()
-            current_tlid = tl_tracks[current_pos].tlid
-            future_tlids = [t.tlid for t in tl_tracks if t.tlid > current_tlid]
+        # Remove old recommendations
+        tl_tracks = self.core.tracklist.get_tl_tracks().get()
+        pos = self.core.tracklist.index().get()
+        if pos is None:
+            current_tlid = -1
+        else:
+            current_tlid = tl_tracks[pos].tlid
+        future_tlids = [t.tlid for t in tl_tracks if t.tlid > current_tlid][10:]
+        if len(future_tlids) > 0:
             self.core.tracklist.remove({'tlid': future_tlids})
 
-        pos = 0 if current_pos == None else current_pos + 1
-        self.core.tracklist.add(tracks=tracks, at_position=pos)
+        # Blacklist
         if len(not_found) > 0:
             state = read_state()
             if 'blacklist' not in state:
