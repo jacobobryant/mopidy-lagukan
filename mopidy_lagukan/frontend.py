@@ -136,24 +136,9 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
         payload = {'client-id': self.client_id, 'event': event}
         metas = self.hit('/recommend', payload)['recommendations']
 
-        # Add the new tracks
         tracks, not_found = self.get_tracks(metas)
-        pos = self.core.tracklist.index().get()
-        pos = 0 if pos is None else pos + 1
-        self.core.tracklist.add(tracks=tracks, at_position=pos).get()
+        self.core.tracklist.replace_queue(tracks)
 
-        # Remove old recommendations
-        tl_tracks = self.core.tracklist.get_tl_tracks().get()
-        pos = self.core.tracklist.index().get()
-        if pos is None:
-            current_tlid = -1
-        else:
-            current_tlid = tl_tracks[pos].tlid
-        future_tlids = [t.tlid for t in tl_tracks if t.tlid > current_tlid][10:]
-        if len(future_tlids) > 0:
-            self.core.tracklist.remove({'tlid': future_tlids})
-
-        # Blacklist
         if len(not_found) > 0:
             state = read_state()
             if 'blacklist' not in state:
