@@ -12,7 +12,6 @@ import uuid
 import requests
 import json
 import logging
-import sys
 import time
 
 logger = logging.getLogger(__name__)
@@ -24,7 +23,7 @@ auth_url = "https://securetoken.googleapis.com/v1/token?key=AIzaSyCMIaf1mHHyJziO
 backend_url = "https://79gcws2i5i.execute-api.us-east-1.amazonaws.com/dev"
 #backend_url = "http://localhost:8080"
 streaming_sources = {'soundcloud', 'spotify', 'gmusic', 'youtube'}
-source_uris = {'local:directory'}
+source_uris = {'local:directory', 'spotifyweb:yourmusic:songs'}
 state_file = os.path.join(appdirs.user_data_dir(), 'mopidy-lagukan', 'state')
 unrecognized_file = os.path.join(appdirs.user_data_dir(), 'mopidy-lagukan', 'unrecognized')
 
@@ -76,6 +75,7 @@ def write_state(s):
 
 def debug(local):
     import code
+    import sys
     params = globals().copy()
     params.update(local)
     code.interact(local=params)
@@ -102,6 +102,7 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
         for uri in source_uris:
             track_uris.extend(collect(core.library, uri))
 
+        logger.info("Collecting library info to Lagukan...")
         tracks = [track
                   for result in core.library.lookup(uris=track_uris).get().values()
                   for track in result]
@@ -122,18 +123,16 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
                 + "title or artist metadata. These tracks will not be played by Lagukan. "
                 + "See " + unrecognized_file + " to see the tracks.")
 
-        sources = [k for k in config.keys()
-                     if k in streaming_sources and config[k]['enabled']]
-
         #debug(locals())
         payload = {'client-id': self.client_id,
-                   'collection': collection,
-                   'sources': sources}
+                   'collection': collection}
         self.hit('/init', payload)
         self.recommend()
 
     def recommend(self, event=None):
-        payload = {'client-id': self.client_id, 'event': event}
+        sources = [k for k in self.config.keys()
+                     if k in streaming_sources and self.config[k]['enabled']]
+        payload = {'client-id': self.client_id, 'event': event, 'sources': sources}
         metas = self.hit('/recommend', payload)['recommendations']
 
         tracks, not_found = self.get_tracks(metas)
