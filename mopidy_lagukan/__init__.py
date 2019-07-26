@@ -6,7 +6,7 @@ import os
 from mopidy import config, ext
 
 
-__version__ = '0.1.12'
+__version__ = '0.1.13'
 
 logger = logging.getLogger(__name__)
 

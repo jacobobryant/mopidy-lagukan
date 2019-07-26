@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 auth_url = "https://securetoken.googleapis.com/v1/token?key=AIzaSyCMIaf1mHHyJziOI0xRw0Qgw6Bh5f5UUS8"
 backend_url = "https://79gcws2i5i.execute-api.us-east-1.amazonaws.com/dev"
 #backend_url = "http://localhost:8080"
-streaming_sources = {'soundcloud', 'spotify', 'gmusic', 'youtube'}
+streaming_sources = {'spotify'}
 source_uris = {'local:directory', 'spotifyweb:yourmusic:songs'}
 state_file = os.path.join(appdirs.user_data_dir(), 'mopidy-lagukan', 'state')
 unrecognized_file = os.path.join(appdirs.user_data_dir(), 'mopidy-lagukan', 'unrecognized')
@@ -102,7 +102,7 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
         for uri in source_uris:
             track_uris.extend(collect(core.library, uri))
 
-        logger.info("Collecting library info to Lagukan...")
+        logger.info("Collecting library info for Lagukan...")
         tracks = [track
                   for result in core.library.lookup(uris=track_uris).get().values()
                   for track in result]
@@ -148,7 +148,12 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
 
     def hit(self, url, payload=None):
         start = time.time()
-        logger.info("hitting Lagukan endpoint: " + url)
+        if url == '/register-client':
+            logger.info("Registering with Lagukan")
+        elif url == '/init':
+            logger.info("Sending library info to Lagukan")
+        elif url == '/recommend':
+            logger.info("Getting recommendations from Lagukan...")
         self.update_token()
 
         url = backend_url + url
@@ -164,6 +169,8 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
             logger.error(response.text)
         #import code; code.interact(local=locals())
         response.raise_for_status()
+        if url == '/recommend':
+            logger.info("Done getting recommendations from Lagukan")
         return json.loads(response.text)
 
     def update_token(self):
@@ -195,7 +202,7 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
                     if k != 'track/artists':
                         val = [val]
                     query[qk] = val
-            for source in ['local', 'spotify', 'soundcloud']:
+            for source in ['local', 'spotify']:
                 result = self.core.library.search(query, uris=[source + ':'], exact=True).get()
                 result = [t for r in result
                             for t in r.tracks
