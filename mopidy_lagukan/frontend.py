@@ -13,6 +13,7 @@ import requests
 import json
 import logging
 import time
+from frozendict import frozendict
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ auth_url = "https://securetoken.googleapis.com/v1/token?key=AIzaSyCMIaf1mHHyJziO
 backend_url = "https://79gcws2i5i.execute-api.us-east-1.amazonaws.com/dev"
 #backend_url = "http://localhost:8080"
 streaming_sources = {'spotify'}
-source_uris = {'local:directory', 'spotifyweb:yourmusic:songs'}
+source_uris = {'local:directory', 'spotifyweb:yourmusic:songs', 'gmusic:track'}
 state_file = os.path.join(appdirs.user_data_dir(), 'mopidy-lagukan', 'state')
 unrecognized_file = os.path.join(appdirs.user_data_dir(), 'mopidy-lagukan', 'unrecognized')
 
@@ -100,7 +101,7 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
 
         track_uris = []
         for uri in source_uris:
-            track_uris.extend(collect(core.library, uri))
+            track_uris.extend(set(collect(core.library, uri)))
 
         logger.info("Collecting library info for Lagukan...")
         tracks = [track
@@ -111,9 +112,18 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
         for t in tracks:
             ft = format_track(t)
             if 'track/artists' in ft:
+                ft['track/artists'] = tuple(ft['track/artists'])
+                ft = frozendict(ft)
                 collection.append(ft)
             else:
                 unrecognized.append(t)
+
+        new_collection = []
+        for ft in set(collection):
+            ft = dict(ft)
+            ft['track/artists'] = list(ft['track/artists'])
+            new_collection.append(ft)
+        collection = new_collection
 
         if len(unrecognized) > 0:
             with open(unrecognized_file, 'w') as f:
@@ -123,7 +133,6 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
                 + "title or artist metadata. These tracks will not be played by Lagukan. "
                 + "See " + unrecognized_file + " to see the tracks.")
 
-        #debug(locals())
         payload = {'client-id': self.client_id,
                    'collection': collection}
         self.hit('/init', payload)
@@ -202,7 +211,7 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
                     if k != 'track/artists':
                         val = [val]
                     query[qk] = val
-            for source in ['local', 'spotify']:
+            for source in ['local', 'spotify', 'gmusic']:
                 result = self.core.library.search(query, uris=[source + ':'], exact=True).get()
                 result = [t for r in result
                             for t in r.tracks
