@@ -54,8 +54,6 @@ def format_track(track):
     ret = {}
     if track.name is not None:
         ret['track/title'] = track.name
-    if track.album != None and track.album.name != "SoundCloud":
-        ret['track/album'] = track.album.name
     if len(track.artists) != 0:
         ret['track/artists'] = [artist.name for artist in track.artists]
     elif track.album != None and len(track.album.artists) != 0:
@@ -72,7 +70,7 @@ def write_state(s):
     except:
         pass
     with open(state_file, 'w') as f:
-        pickle.dump(select_keys(s, ['client-id', 'blacklist']), f, pickle.HIGHEST_PROTOCOL)
+        pickle.dump(select_keys(s, ['client-id', 'blacklist', 'last-init']), f, pickle.HIGHEST_PROTOCOL)
 
 def debug(local):
     import code
@@ -98,44 +96,50 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
             state = {'client-id': uuid.UUID(self.hit('/register-client')['client-id'])}
             write_state(state)
         self.client_id = state['client-id']
+        last_init = state.get('last-init')
 
-        track_uris = []
-        for uri in source_uris:
-            track_uris.extend(set(collect(core.library, uri)))
+        if not last_init or last_init < time.time() - 60 * 60 * 24 * 3:
+            track_uris = []
+            for uri in source_uris:
+                track_uris.extend(set(collect(core.library, uri)))
 
-        logger.info("Collecting library info for Lagukan...")
-        tracks = [track
-                  for result in core.library.lookup(uris=track_uris).get().values()
-                  for track in result]
-        unrecognized = []
-        collection = []
-        for t in tracks:
-            ft = format_track(t)
-            if 'track/artists' in ft:
-                ft['track/artists'] = tuple(ft['track/artists'])
-                ft = frozendict(ft)
-                collection.append(ft)
-            else:
-                unrecognized.append(t)
+            logger.info("Collecting library info for Lagukan...")
+            tracks = [track
+                      for result in core.library.lookup(uris=track_uris).get().values()
+                      for track in result]
+            unrecognized = []
+            collection = []
+            for t in tracks:
+                ft = format_track(t)
+                if 'track/artists' in ft:
+                    ft['track/artists'] = tuple(ft['track/artists'])
+                    ft = frozendict(ft)
+                    collection.append(ft)
+                else:
+                    unrecognized.append(t)
 
-        new_collection = []
-        for ft in set(collection):
-            ft = dict(ft)
-            ft['track/artists'] = list(ft['track/artists'])
-            new_collection.append(ft)
-        collection = new_collection
+            new_collection = []
+            for ft in set(collection):
+                ft = dict(ft)
+                ft['track/artists'] = list(ft['track/artists'])
+                new_collection.append(ft)
+            collection = new_collection
 
-        if len(unrecognized) > 0:
-            with open(unrecognized_file, 'w') as f:
-                for t in unrecognized:
-                    print(t.uri.replace("%20", " "), format_track(t), file=f)
-            logger.info("There were " + str(len(unrecognized)) + " tracks without either "
-                + "title or artist metadata. These tracks will not be played by Lagukan. "
-                + "See " + unrecognized_file + " to see the tracks.")
+            if len(unrecognized) > 0:
+                with open(unrecognized_file, 'w') as f:
+                    for t in unrecognized:
+                        print(t.uri.replace("%20", " "), format_track(t), file=f)
+                logger.info("There were " + str(len(unrecognized)) + " tracks without either "
+                    + "title or artist metadata. These tracks will not be played by Lagukan. "
+                    + "See " + unrecognized_file + " to see the tracks.")
 
-        payload = {'client-id': self.client_id,
-                   'collection': collection}
-        self.hit('/init', payload)
+            payload = {'client-id': self.client_id,
+                       'collection': collection}
+            self.hit('/init', payload)
+
+            state['last-init'] = time.time()
+            write_state(state)
+
         self.recommend()
 
     def recommend(self, event=None):
@@ -203,9 +207,10 @@ class LagukanFrontend(pykka.ThreadingActor, core.CoreListener):
         tracks = []
         not_found = []
         for meta in metas:
+            meta.pop('album', None)
             query = {}
-            for k, qk in zip(['track/artists', 'track/title', 'track/album'],
-                             ['artist', 'track_name', 'album']):
+            for k, qk in zip(['track/artists', 'track/title'],
+                             ['artist', 'track_name']):
                 if k in meta:
                     val = meta[k]
                     if k != 'track/artists':
