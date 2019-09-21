@@ -26,10 +26,7 @@ setup(
     install_requires=[
         'setuptools',
         'Mopidy >= 1.0',
-        'Pykka >= 1.1',
-        'appdirs',
-        'edn_format',
-        'frozendict'
+        'Pykka >= 1.1'
     ],
     entry_points={
         'mopidy.ext': [
