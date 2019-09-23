@@ -6,3 +6,4 @@ include mopidy_lagukan/ext.conf
 include tox.ini
 
 recursive-include tests *.py
+recursive-include mopidy_lagukan/static *
