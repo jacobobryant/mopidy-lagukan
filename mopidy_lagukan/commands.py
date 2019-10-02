@@ -1,11 +1,8 @@
 from __future__ import print_function
 from __future__ import unicode_literals
-from oauth2client.client import OAuth2WebServerFlow
-import gmusicapi
-from dialog import Dialog
+
 from os.path import expanduser, join, isdir, dirname
 from os import makedirs
-import webbrowser
 from mopidy import commands
 import sys
 
@@ -110,6 +107,11 @@ def get_config(d):
 
 class ConfigCommand(commands.Command):
     def run(self, args, config):
+        from oauth2client.client import OAuth2WebServerFlow
+        import gmusicapi
+        import webbrowser
+        from dialog import Dialog
+
         d = Dialog()
         d.set_background_title('Lagukan config')
         config = get_config(d)
