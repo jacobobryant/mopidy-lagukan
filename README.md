@@ -22,5 +22,5 @@ config option:
 
 ```
 [lagukan]
-autorun = false
+autostart = false
 ```
