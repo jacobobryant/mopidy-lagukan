@@ -17,7 +17,7 @@ pip install Mopidy-Lagukan
 ## Configuration
 
 By default, Lagukan will open in your browser automatically when you start mopidy. This is because
-Lagukan will only work while the browser window is open. You can disable this by setting the `autorun`
+Lagukan will only work while the browser window is open. You can disable this by setting the `autostart`
 config option:
 
 ```
